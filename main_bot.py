@@ -2,6 +2,7 @@ import asyncio
 import json
 from geopy.geocoders import Nominatim
 from random import randint
+import logging
 
 from aiogram import Bot, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -24,6 +25,14 @@ delivery_button = 'Заказать доставку 🏍'
 phone_number_button = 'Отправить номер 📞'
 location_button = 'Отправить местоположение 📍'
 ordered_button = 'Завершить оформление ✅'
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    filename=f'logs/logger.log',
+    level=logging.ERROR,
+    format='%(asctime)s, %(levelname)s, %(name)s, %(message)s',
+)
+logger.addHandler(logging.StreamHandler())
 
 
 @dp.message_handler(commands=['start'])
@@ -52,7 +61,7 @@ async def get_order(msg: types.web_app_data, state: FSMContext):
     result += f'\nОбщая стоимость: <b>{total_cost} р</b>'
     await msg.answer(
         result,
-        reply_markup=kb.menu_keyboard([cancel_button, pay_button], one_time=True))
+        reply_markup=kb.menu_keyboard([cancel_button, pay_button]))
     await state.update_data(total_price=total_cost)
 
 
@@ -66,7 +75,7 @@ async def cancle(msg: types.Message, state: FSMContext):
 async def pay(msg: types.Message):
     '''Оплата заказа'''
     tg_id = msg.from_user.id
-    del_msg = await msg.answer('Проверка оплаты...')
+    del_msg = await msg.answer('Проверка оплаты...', reply_markup=types.ReplyKeyboardRemove())
     del_sticker = await msg.answer_sticker('CAACAgIAAxkBAAEGfF5jew5DNZTWY9eYSB2eXIvLg2uZOgACdFsBAAFji0YM3S9lzUKXpDgrBA')
     await asyncio.sleep(4)
     await bot.delete_message(tg_id, del_msg.message_id)
