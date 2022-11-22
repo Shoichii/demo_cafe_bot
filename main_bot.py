@@ -29,15 +29,16 @@ rating_buttons = ['1 🌟', '2 🌟', '3 🌟', '4 🌟', '5 🌟']
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    # filename=f'logs/logger.log',
+    filename=f'logs/logger.log',
     level=logging.INFO,
     format='%(asctime)s, %(levelname)s, %(name)s, %(message)s',
 )
 logger.addHandler(logging.StreamHandler())
 
+
 @dp.message_handler(commands=['start'])
-async def cmd_start(msg: types.Message):
-    print(msg)
+async def cmd_start(msg: types.Message, state: FSMContext):
+    await state.finish()
     with open('./img/onlineShopping.png', 'rb') as greeting_pic:
         await bot.send_photo(
             msg.from_user.id, greeting_pic,
@@ -52,6 +53,7 @@ async def cmd_start(msg: types.Message):
 @dp.message_handler(content_types='web_app_data')
 async def get_order(msg: types.web_app_data, state: FSMContext):
     '''Получение заказа через WebApp и вывод его в сообщении'''
+    await state.finish()
     data = json.loads(msg.web_app_data.data)
     products = data['products']
     total_cost = data['totalCost']
@@ -157,6 +159,7 @@ async def add_info(msg: types.Message, state: FSMContext):
     states = await state.get_data()
     address = states.get('location')
     add_info = states.get('add_info')
+
     if add_info:
         message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
 Ожидайте курьера по адресу 
@@ -164,11 +167,13 @@ async def add_info(msg: types.Message, state: FSMContext):
 
 Дополнительная информация для курьера:
 <b>{states.get('add_info')}</b>'''
+
     else:
         message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
 Ожидайте курьера по адресу
 <b>{address}</b>'''
-    if (msg.text == ordered_button or msg.text == cancel_button):
+
+    if msg.text == ordered_button:
         await msg.answer(message, reply_markup=kb.make_order_button())
 
         await asyncio.sleep(5)
@@ -181,24 +186,29 @@ async def add_info(msg: types.Message, state: FSMContext):
         with open('./img/locations.png', 'rb') as locations:
             await msg.answer_photo(locations, caption=f'''Курьер прибудет через 5 минут по адресу 
 <b>{address}</b>''', reply_markup=kb.courier_location())
+
     else:
         await state.update_data(add_info=msg.text)
         await msg.answer(
             'Информация принята',
             reply_markup=kb.menu_keyboard([cancel_button, ordered_button]))
+        return
+
+    await Register.courier_location.set()
 
 
-@dp.callback_query_handler(Text(equals='courier_location'))
-async def courier_location(call: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(Text(equals='courier_location'),
+                           state=Register.courier_location)
+async def courier_geo_loc(call: types.CallbackQuery, state: FSMContext):
+    await call.message.edit_reply_markup()
     states = await state.get_data()
     courier_geo = states.get('courier_location')
-    print(states, courier_geo)
     await bot.send_location(call.message.chat.id, courier_geo[0], courier_geo[1])
     await asyncio.sleep(5)
     with open('./img/checkout.png', 'rb') as checkout:
         await call.message.answer_photo(
-                checkout, 
-                caption='''Ваш заказ доставлен. Спасибо, что выбрали наш сервис. Вам доступна скидка 10% на седующий заказ
+            checkout,
+            caption='''Ваш заказ доставлен. Спасибо, что выбрали наш сервис. Вам доступна скидка 10% на седующий заказ
 
 Пожалуйста, оцените нашу работу.''', reply_markup=kb.rating(rating_buttons))
     await state.finish()
@@ -206,7 +216,6 @@ async def courier_location(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(Text(startswith='rating'))
 async def rate(call: types.CallbackQuery):
-    print(call)
     await call.answer('Спасибо за оценку!', show_alert=True)
     await call.message.edit_reply_markup()
 
