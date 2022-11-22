@@ -25,15 +25,15 @@ delivery_button = 'Заказать доставку 🏍'
 phone_number_button = 'Отправить номер 📞'
 location_button = 'Отправить местоположение 📍'
 ordered_button = 'Завершить оформление ✅'
+rating_buttons = ['1 🌟', '2 🌟', '3 🌟', '4 🌟', '5 🌟']
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    filename=f'logs/logger.log',
-    level=logging.ERROR,
+    # filename=f'logs/logger.log',
+    level=logging.INFO,
     format='%(asctime)s, %(levelname)s, %(name)s, %(message)s',
 )
 logger.addHandler(logging.StreamHandler())
-
 
 @dp.message_handler(commands=['start'])
 async def cmd_start(msg: types.Message):
@@ -118,6 +118,7 @@ async def get_delivery_location(msg: types.Message, state: FSMContext):
 @dp.message_handler(state=Register.location, content_types=['location', 'text'])
 async def order_is_processed(msg: types.Message, state: FSMContext):
     '''Дополнительная информация'''
+    geolocator = Nominatim(user_agent="cafe_demo_bot")
     if msg.text == cancel_button:
         await state.finish()
         await cancelMsg.cancleMsg(msg, state, kb)
@@ -125,8 +126,8 @@ async def order_is_processed(msg: types.Message, state: FSMContext):
     if msg.location:
         latitude = msg.location.latitude
         longitude = msg.location.longitude
-        geolocator = Nominatim(user_agent="cafe_demo_bot")
         location = geolocator.reverse(f'{latitude}, {longitude}')
+        await state.update_data(courier_location=[location.latitude + 0.007, location.longitude + 0.005])
         address = location.address.split(',')[0:4]
         address.reverse()
         answer = f'''
@@ -136,6 +137,8 @@ async def order_is_processed(msg: types.Message, state: FSMContext):
 Или завершите оформление заказа'''
         await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, ' '.join(address))
     else:
+        location = geolocator.geocode(msg.text)
+        await state.update_data(courier_location=[location.latitude + 0.007, location.longitude + 0.005])
         answer = f'''
 При необходимости укажите дополнительную информацию для курьера
 
@@ -152,7 +155,7 @@ async def add_info(msg: types.Message, state: FSMContext):
         await cancelMsg.cancleMsg(msg, state, kb)
         return
     states = await state.get_data()
-    address = states.get('geo')
+    address = states.get('location')
     add_info = states.get('add_info')
     if add_info:
         message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
@@ -167,29 +170,45 @@ async def add_info(msg: types.Message, state: FSMContext):
 <b>{address}</b>'''
     if (msg.text == ordered_button or msg.text == cancel_button):
         await msg.answer(message, reply_markup=kb.make_order_button())
-        await state.finish()
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
         with open('./img/courier.png', 'rb') as courier:
             await msg.answer_photo(
                 courier, 
                 caption=f'Ваш заказ <b>№ {randint(50, 200)}</b> готов и передан курьеру для доставки')
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
         with open('./img/locations.png', 'rb') as locations:
             await msg.answer_photo(locations, caption=f'''Курьер прибудет через 5 минут по адресу 
-<b>{address}</b>''')
-
-        await asyncio.sleep(30)
-        with open('./img/checkout.png', 'rb') as checkout:
-            await msg.answer_photo(
-                checkout, 
-                caption='Ваш заказ доставлен. Спасибо, что выбрали наш сервис. Вам доступна скидка 10% на седующий заказ')
+<b>{address}</b>''', reply_markup=kb.courier_location())
     else:
         await state.update_data(add_info=msg.text)
         await msg.answer(
             'Информация принята',
             reply_markup=kb.menu_keyboard([cancel_button, ordered_button]))
+
+
+@dp.callback_query_handler(Text(equals='courier_location'))
+async def courier_location(call: types.CallbackQuery, state: FSMContext):
+    states = await state.get_data()
+    courier_geo = states.get('courier_location')
+    print(states, courier_geo)
+    await bot.send_location(call.message.chat.id, courier_geo[0], courier_geo[1])
+    await asyncio.sleep(5)
+    with open('./img/checkout.png', 'rb') as checkout:
+        await call.message.answer_photo(
+                checkout, 
+                caption='''Ваш заказ доставлен. Спасибо, что выбрали наш сервис. Вам доступна скидка 10% на седующий заказ
+
+Пожалуйста, оцените нашу работу.''', reply_markup=kb.rating(rating_buttons))
+    await state.finish()
+
+
+@dp.callback_query_handler(Text(startswith='rating'))
+async def rate(call: types.CallbackQuery):
+    print(call)
+    await call.answer('Спасибо за оценку!', show_alert=True)
+    await call.message.edit_reply_markup()
 
 
 if __name__ == '__main__':

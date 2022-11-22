@@ -6,4 +6,5 @@ class Register(StatesGroup):
     #geo = State()
     phone_number = State()
     location = State()
+    courier_location = State()
     add_info = State()
