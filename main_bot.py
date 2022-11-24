@@ -63,7 +63,7 @@ async def get_order(msg: types.web_app_data, state: FSMContext):
     result += f'\nОбщая стоимость: <b>{total_cost} р</b>'
     await msg.answer(
         result,
-        reply_markup=kb.menu_keyboard([cancel_button, pay_button]))
+        reply_markup=kb.menu_keyboard([cancel_button, delivery_button]))
     await state.update_data(total_price=total_cost)
 
 
@@ -71,20 +71,6 @@ async def get_order(msg: types.web_app_data, state: FSMContext):
 async def cancle(msg: types.Message, state: FSMContext):
     '''Отмена заказа'''
     await cancelMsg.cancleMsg(msg, state, kb)
-
-
-@dp.message_handler(Text(equals=pay_button))
-async def pay(msg: types.Message):
-    '''Оплата заказа'''
-    tg_id = msg.from_user.id
-    del_msg = await msg.answer('Проверка оплаты...', reply_markup=types.ReplyKeyboardRemove())
-    del_sticker = await msg.answer_sticker('CAACAgIAAxkBAAEGfF5jew5DNZTWY9eYSB2eXIvLg2uZOgACdFsBAAFji0YM3S9lzUKXpDgrBA')
-    await asyncio.sleep(4)
-    await bot.delete_message(tg_id, del_msg.message_id)
-    await bot.delete_message(tg_id, del_sticker.message_id)
-    await msg.answer(
-        'Оплата прошла успешно',
-        reply_markup=kb.menu_keyboard([cancel_button, delivery_button]))
 
 
 @dp.message_handler(Text(equals=delivery_button))
@@ -133,20 +119,21 @@ async def order_is_processed(msg: types.Message, state: FSMContext):
         address = location.address.split(',')[0:4]
         address.reverse()
         answer = f'''
-При необходимости укажите дополнительную информацию для курьера
+При необходимости напишите дополнительную информацию для курьера
 (например код домофона, этаж, номер квартиры и др.)
 
-Или завершите оформление заказа'''
-        await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, ' '.join(address))
+Или перейдите к оплате'''
+        await locationMsg.locationMsg(msg, answer, [cancel_button, pay_button], state, kb, ' '.join(address))
     else:
         try:
             location = geolocator.geocode(msg.text)
             await state.update_data(courier_location=[location.latitude + 0.007, location.longitude + 0.005])
             answer = f'''
-При необходимости укажите дополнительную информацию для курьера
+При необходимости напишите дополнительную информацию для курьера
+(например код домофона, этаж, номер квартиры и др.)
 
-Или завершите оформление заказа'''
-            await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, msg.text)
+Или перейдите к оплате'''
+            await locationMsg.locationMsg(msg, answer, [cancel_button, pay_button], state, kb, msg.text)
         except:
             await msg.answer('Похоже Вы ввели не существующий адрес, попробуйте еще раз или передайте местоположение кнопкой')
             return
@@ -160,24 +147,33 @@ async def add_info(msg: types.Message, state: FSMContext):
         await state.finish()
         await cancelMsg.cancleMsg(msg, state, kb)
         return
-    states = await state.get_data()
-    address = states.get('location')
-    add_info = states.get('add_info')
-
-    if add_info:
-        message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
+    if msg.text == pay_button:
+        tg_id = msg.from_user.id
+        del_msg = await msg.answer('Проверка оплаты...', reply_markup=types.ReplyKeyboardRemove())
+        del_sticker = await msg.answer_sticker('CAACAgIAAxkBAAEGfF5jew5DNZTWY9eYSB2eXIvLg2uZOgACdFsBAAFji0YM3S9lzUKXpDgrBA')
+        await asyncio.sleep(4)
+        await bot.delete_message(tg_id, del_msg.message_id)
+        await bot.delete_message(tg_id, del_sticker.message_id)
+        await msg.answer(
+            'Оплата прошла успешно',
+            reply_markup=kb.menu_keyboard([cancel_button, ordered_button]))
+    elif msg.text == ordered_button:
+        states = await state.get_data()
+        address = states.get('location')
+        add_info = states.get('add_info')
+        if add_info:
+            message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
 Ожидайте курьера по адресу 
 <b>{address}</b>
 
 Дополнительная информация для курьера:
 <b>{states.get('add_info')}</b>'''
 
-    else:
-        message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
+        else:
+            message = f'''Заказ на сумму <b>{states.get('total_price')} руб.</b> успешно оформлен.
 Ожидайте курьера по адресу
 <b>{address}</b>'''
 
-    if msg.text == ordered_button:
         await msg.answer(message, reply_markup=kb.make_order_button())
 
         await asyncio.sleep(5)
@@ -190,15 +186,19 @@ async def add_info(msg: types.Message, state: FSMContext):
         with open('./img/locations.png', 'rb') as locations:
             await msg.answer_photo(locations, caption=f'''Курьер прибудет через 5 минут по адресу 
 <b>{address}</b>''', reply_markup=kb.courier_location())
-
+        await Register.courier_location.set()
     else:
         await state.update_data(add_info=msg.text)
         await msg.answer(
             'Информация принята',
-            reply_markup=kb.menu_keyboard([cancel_button, ordered_button]))
+            reply_markup=kb.menu_keyboard([cancel_button, pay_button]))
         return
+    
 
-    await Register.courier_location.set()
+@dp.message_handler(Text(equals=ordered_button))
+async def ordered(msg: types.Message, state: FSMContext):
+    '''Завершение заказа'''
+    
 
 
 @dp.callback_query_handler(Text(equals='courier_location'),
