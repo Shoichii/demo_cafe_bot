@@ -30,7 +30,7 @@ rating_buttons = ['1 🌟', '2 🌟', '3 🌟', '4 🌟', '5 🌟']
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     filename=f'logs/logger.log',
-    level=logging.INFO,
+    level=logging.ERROR,
     format='%(asctime)s, %(levelname)s, %(name)s, %(message)s',
 )
 logger.addHandler(logging.StreamHandler())
@@ -139,13 +139,17 @@ async def order_is_processed(msg: types.Message, state: FSMContext):
 Или завершите оформление заказа'''
         await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, ' '.join(address))
     else:
-        location = geolocator.geocode(msg.text)
-        await state.update_data(courier_location=[location.latitude + 0.007, location.longitude + 0.005])
-        answer = f'''
+        try:
+            location = geolocator.geocode(msg.text)
+            await state.update_data(courier_location=[location.latitude + 0.007, location.longitude + 0.005])
+            answer = f'''
 При необходимости укажите дополнительную информацию для курьера
 
 Или завершите оформление заказа'''
-        await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, msg.text)
+            await locationMsg.locationMsg(msg, answer, [cancel_button, ordered_button], state, kb, msg.text)
+        except:
+            await msg.answer('Похоже Вы ввели не существующий адрес, попробуйте еще раз или передайте местоположение кнопкой')
+            return
     await Register.add_info.set()
 
 
@@ -198,7 +202,7 @@ async def add_info(msg: types.Message, state: FSMContext):
 
 
 @dp.callback_query_handler(Text(equals='courier_location'),
-                           state=Register.courier_location)
+                            state=Register.courier_location)
 async def courier_geo_loc(call: types.CallbackQuery, state: FSMContext):
     await call.message.edit_reply_markup()
     states = await state.get_data()
